@@ -821,8 +821,8 @@ public class NatsServerRunner implements AutoCloseable {
             return this;
         }
 
-        public Builder ignoreConnectCheck(boolean ignoreExceptionOnConnectCheck) {
-            this.ignoreConnectCheck = ignoreExceptionOnConnectCheck;
+        public Builder ignoreConnectCheck(boolean ignoreConnectCheck) {
+            this.ignoreConnectCheck = ignoreConnectCheck;
             return this;
         }
 

@@ -391,4 +391,21 @@ public class NatsServerRunnerTest extends TestBase {
             assertTrue(e.getMessage().contains("nats-server: Parse error on line 2"));
         }
     }
+
+    @Test
+    public void testConnectCheck() throws Exception {
+        NatsServerRunner.Builder builder = NatsServerRunner.builder()
+                .port(4222)
+                .output(new ConsoleOutput())
+                .ignoreConnectCheck(true);
+
+        try (NatsServerRunner sr = builder.build()) {
+            sr.connectCheck(builder, "localhost", 4222);
+            try {
+                sr.connectCheck(builder, "localhost", 9999);
+                fail();
+            } catch (IOException ignored) {
+            }
+        }
+    }
 }

@@ -337,8 +337,6 @@ public class NatsServerRunner implements AutoCloseable {
 
         long procCheckWait = b.processCheckWait == null ? DEFAULT_PROCESS_CHECK_WAIT : b.processCheckWait;
         int procCheckTries = b.processCheckTries == null ? DEFAULT_PROCESS_CHECK_TRIES : b.processCheckTries;
-        long connCheckWait = b.connectCheckWait == null ? DEFAULT_RUN_CHECK_WAIT : b.connectCheckWait;
-        int connCheckTries = b.connectCheckTries == null ? DEFAULT_RUN_CHECK_TRIES : b.connectCheckTries;
 
         List<String> cmd = new ArrayList<>();
         cmd.add(_executablePath);
@@ -404,26 +402,10 @@ public class NatsServerRunner implements AutoCloseable {
             }
             while (!process.isAlive() && --tries > 0);
 
-            SocketAddress addr = new InetSocketAddress("localhost", _ports.get(NATS_PORT_KEY));
-            SocketChannel socketChannel = SocketChannel.open();
-            socketChannel.configureBlocking(true);
-            if (connCheckTries > 0) {
-                boolean checking = true;
-                tries = connCheckTries;
-                do {
-                    try {
-                        socketChannel.connect(addr);
-                        checking = false;
-                    }
-                    catch (ConnectException e) {
-                        if (--tries == 0) {
-                            throw e;
-                        }
-                        sleep(connCheckWait);
-                    } finally {
-                        socketChannel.close();
-                    }
-                } while (checking);
+            // Allow caller to NOT do the connectCheck and take the responsibility,
+            // in case nats-server process is already alive, but ConnectCheck fails somehow.
+            if (!b.ignoreConnectCheck) {
+                connectCheck(b, "localhost", _ports.get(NATS_PORT_KEY));
             }
 
             _displayOut.info("%%% Started [" + _cmdLine + "]");
@@ -461,7 +443,38 @@ public class NatsServerRunner implements AutoCloseable {
                     exMessage.append(System.lineSeparator()).append(configSep);
                 }
             }
+            // It's better to try to close the nats-server process before throwing exception,
+            // in case nats-server process is already alive, but ConnectCheck fails somehow.
+            // Otherwise, a new nats-server process could NOT start and listen to the port (i.g. 4222)
+            try {shutdown();} catch (InterruptedException ignore) {}
             throw new IllegalStateException(exMessage.toString());
+        }
+    }
+
+    public void connectCheck(Builder b, String hostname, int port) throws IOException {
+        long connCheckWait = b.connectCheckWait == null ? DEFAULT_RUN_CHECK_WAIT : b.connectCheckWait;
+        int connCheckTries = b.connectCheckTries == null ? DEFAULT_RUN_CHECK_TRIES : b.connectCheckTries;
+        int tries;
+        SocketAddress addr = new InetSocketAddress(hostname, port);
+        SocketChannel socketChannel = SocketChannel.open();
+        socketChannel.configureBlocking(true);
+        if (connCheckTries > 0) {
+            boolean checking = true;
+            tries = connCheckTries;
+            do {
+                try {
+                    socketChannel.connect(addr);
+                    checking = false;
+                }
+                catch (ConnectException e) {
+                    if (--tries == 0) {
+                        throw e;
+                    }
+                    sleep(connCheckWait);
+                } finally {
+                    socketChannel.close();
+                }
+            } while (checking);
         }
     }
 
@@ -684,6 +697,7 @@ public class NatsServerRunner implements AutoCloseable {
         Long connectCheckWait;
         Integer connectCheckTries;
         boolean fullErrorReportOnStartup = true;
+        boolean ignoreConnectCheck = false;
 
         public Builder port(Integer port) {
             return port(CONFIG_PORT_KEY, port);
@@ -804,6 +818,11 @@ public class NatsServerRunner implements AutoCloseable {
 
         public Builder fullErrorReportOnStartup(boolean fullErrorReportOnStartup) {
             this.fullErrorReportOnStartup = fullErrorReportOnStartup;
+            return this;
+        }
+
+        public Builder ignoreConnectCheck(boolean ignoreExceptionOnConnectCheck) {
+            this.ignoreConnectCheck = ignoreExceptionOnConnectCheck;
             return this;
         }
 
